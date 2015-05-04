@@ -15,7 +15,10 @@ export default Discourse.Route.extend(ShowFooter, {
 
   setupController: function(controller, model) {
     controller.set('model', model);
-    this.controllerFor('user-activity').set('userActionType', this.get('userActionType'));
+    const userActionType = this.get('userActionType');
+
+    this.controllerFor('user').set('userActionType', userActionType);
+    this.controllerFor('user-activity').set('userActionType', userActionType);
   },
 
   actions: {
