@@ -5,13 +5,12 @@
   const DATA_PREFIX = "data-poll-";
   const DEFAULT_POLL_NAME = "poll";
 
-  const WHITELISTED_ATTRIBUTES = ["type", "name", "min", "max", "step", "order", "color", "background", "status"];
-  const WHITELISTED_STYLES = ["color", "background"];
+  const WHITELISTED_ATTRIBUTES = ["type", "name", "min", "max", "step", "order", "status"];
 
-  const ATTRIBUTES_REGEX = new RegExp("(" + WHITELISTED_ATTRIBUTES.join("|") + ")=[^\\s\\]]+", "g");
+  const ATTRIBUTES_REGEX = new RegExp("(" + WHITELISTED_ATTRIBUTES.join("|") + ")=['\"]?[^\\s\\]]+['\"]?", "g");
 
   Discourse.Dialect.replaceBlock({
-    start: /\[poll([^\]]*)\]([\s\S]*)/igm,
+    start: /\[poll((?:\s+\w+=[^\s\]]+)*)\]([\s\S]*)/igm,
     stop: /\[\/poll\]/igm,
 
     emitter: function(blockContents, matches) {
@@ -44,8 +43,9 @@
 
       // extract poll attributes
       (matches[1].match(ATTRIBUTES_REGEX) || []).forEach(function(m) {
-        var attr = m.split("=");
-        attributes[DATA_PREFIX + attr[0]] = attr[1];
+        var attr = m.split("="), name = attr[0], value = attr[1];
+        value = Handlebars.Utils.escapeExpression(value.replace(/["']/g, ""));
+        attributes[DATA_PREFIX + name] = value;
       });
 
       // we might need these values later...
@@ -66,47 +66,37 @@
         }
       }
 
-      // make sure the first child is a list with at least 1 option
-      if (contents.length === 0 || contents[0].length <= 1 || (contents[0][0] !== "numberlist" && contents[0][0] !== "bulletlist")) {
+      // make sure there's only 1 child and it's a list with at least 1 option
+      if (contents.length !== 1 || contents[0].length <= 1 || (contents[0][0] !== "numberlist" && contents[0][0] !== "bulletlist")) {
         return ["div"].concat(contents);
+      }
+
+      // make sure there's only options in the list
+      for (o = 1; o < contents[0].length; o++) {
+        if (contents[0][o][0] !== "listitem") {
+          return ["div"].concat(contents);
+        }
       }
 
       // TODO: remove non whitelisted content
 
-      // generate <li> styles (if any)
-      var styles = [];
-      WHITELISTED_STYLES.forEach(function(style) {
-        if (attributes[DATA_PREFIX + style]) {
-          styles.push(style + ":" + attributes[DATA_PREFIX + style]);
-        }
-      });
-
-      var style = styles.join(";");
-
-      // add option id (hash) + style
+      // add option id (hash)
       for (o = 1; o < contents[0].length; o++) {
-        // break as soon as the list is done
-        if (contents[0][o][0] !== "listitem") { break; }
-
         var attr = {};
-        // apply styles if any
-        if (style.length > 0) { attr["style"] = style; }
         // compute md5 hash of the content of the option
         attr[DATA_PREFIX + "option-id"] = md5(JSON.stringify(contents[0][o].slice(1)));
         // store options attributes
         contents[0][o].splice(1, 0, attr);
       }
 
-      // // add some information when type is "multiple"
-      // if (attributes[DATA_PREFIX + "type"] === "multiple") {
-
-
-      // }
-
       var result = ["div", attributes],
           poll = ["div"];
 
-      // 1 - POLL INFO
+      // 1 - POLL CONTAINER
+      var container = ["div", { "class": "poll-container" }].concat(contents);
+      poll.push(container);
+
+      // 2 - POLL INFO
       var info = ["div", { "class": "poll-info" }];
 
       // # of voters
@@ -147,10 +137,6 @@
 
       poll.push(info);
 
-      // 2 - POLL CONTAINER
-      var container = ["div", { "class": "poll-container" }].concat(contents);
-      poll.push(container);
-
       // 3 - BUTTONS
       var buttons = ["div", { "class": "poll-buttons" }];
 
@@ -179,6 +165,4 @@
   Discourse.Markdown.whiteListTag("a", "class", /^button (cast-votes|toggle-results)/);
 
   Discourse.Markdown.whiteListTag("li", "data-*");
-  Discourse.Markdown.whiteListTag("li", "style");
-
 })();
